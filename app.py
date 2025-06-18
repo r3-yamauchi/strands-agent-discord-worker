@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import os
 from aws_cdk import App, Environment
-from stacks.strands_agent_stack import StrandsAgentStack
+from stacks.strands_agent_discord_worker_stack import StrandsAgentDiscordWorkerStack
 
 app = App()
 
@@ -11,11 +11,11 @@ region = app.node.try_get_context("region") or os.environ.get("CDK_DEFAULT_REGIO
 
 # スタックを作成
 env = Environment(account=account, region=region) if account and region else None
-StrandsAgentStack(
+StrandsAgentDiscordWorkerStack(
     app, 
-    "StrandsAgentStack",
+    "StrandsAgentDiscordWorkerStack",
     env=env,
-    description="Strands Agents on Lambda Function"
+    description="Strands Agents Discord Worker on Lambda Function"
 )
 
 app.synth()

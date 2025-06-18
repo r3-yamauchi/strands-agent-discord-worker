@@ -1,8 +1,11 @@
 [project]
-name = "strands-agent-lambda"
+name = "strands-agent-discord-worker"
 version = "1.0.0"
-description = "Strands Agent on AWS Lambda"
+description = "Strands Agent Discord Worker on AWS Lambda"
 readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "r3-yamauchi"}]
+repository = "https://github.com/r3-yamauchi/strands-agent-discord-worker"
 requires-python = ">=3.11"
 dependencies = [
     "strands-agents>=0.1.7",

@@ -11,15 +11,17 @@ from constructs import Construct
 import os
 
 
-class StrandsAgentStack(Stack):
+class StrandsAgentDiscordWorkerStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
         # コンテキストから設定を取得
-        memory_size = self.node.try_get_context("lambda_memory") or 1024
-        timeout_minutes = self.node.try_get_context("lambda_timeout") or 10
+        memory_size = int(self.node.try_get_context("lambda_memory") or 1024)
+        timeout_minutes = int(self.node.try_get_context("lambda_timeout") or 10)
         reserved_concurrent = self.node.try_get_context("reserved_concurrent")
-        function_name = self.node.try_get_context("lambda_function_name") or "strands-agent-sample1"
+        if reserved_concurrent:
+            reserved_concurrent = int(reserved_concurrent)
+        function_name = self.node.try_get_context("lambda_function_name") or "strands-agent-discord-worker"
         default_model_id = self.node.try_get_context("default_model_id")
         
         # Lambda実行ロールを作成
@@ -38,9 +40,43 @@ class StrandsAgentStack(Stack):
                                 "bedrock:InvokeModel",
                                 "bedrock:InvokeModelWithResponseStream",
                                 "bedrock:Converse",
-                                "bedrock:ConverseStream"
+                                "bedrock:ConverseStream",
+                                "bedrock:ListFoundationModels",
+                                "bedrock:ListProvisionedModelThroughputs",
+                                "bedrock:ListCustomModels",
+                                "bedrock:ListModelCustomizationJobs",
+                                "bedrock:ListEvaluationJobs",
+                                "bedrock:ListGuardrails",
+                                "bedrock:ListAgents",
+                                "bedrock:ListAgentActionGroups",
+                                "bedrock:ListAgentAliases",
+                                "bedrock:ListAgentKnowledgeBases",
+                                "bedrock:ListAgentVersions",
+                                "bedrock:ListDataSources",
+                                "bedrock:ListIngestionJobs",
+                                "bedrock:ListKnowledgeBases",
+                                "bedrock:ListPrompts",
+                                "bedrock:ListFlows",
+                                "bedrock:ListFlowAliases",
+                                "bedrock:ListFlowVersions",
+                                "bedrock:ListTagsForResource"
                             ],
                             resources=["*"]  # 特定のモデルARNに制限することも可能
+                        ),
+                        # SNS権限
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=[
+                                "sns:Subscribe",
+                                "sns:Unsubscribe",
+                                "sns:Receive",
+                                "sns:ListTopics",
+                                "sns:ListSubscriptions",
+                                "sns:ListSubscriptionsByTopic",
+                                "sns:GetTopicAttributes",
+                                "sns:GetSubscriptionAttributes"
+                            ],
+                            resources=["*"]  # すべてのSNS Topicに対してサブスクライブ可能
                         ),
                         # use_awsツール用の権限
                         iam.PolicyStatement(
@@ -118,43 +154,31 @@ class StrandsAgentStack(Stack):
             role=lambda_role,
             environment={
                 "PYTHONPATH": "/opt/python",
-                **({"DEFAULT_MODEL_ID": default_model_id} if default_model_id else {})
+                **({"DEFAULT_MODEL_ID": default_model_id} if default_model_id else {}),
+                # Discord設定を環境変数から取得
+                "DISCORD_APPLICATION_ID": os.environ.get("DISCORD_APPLICATION_ID", ""),
+                "DISCORD_BOT_TOKEN": os.environ.get("DISCORD_BOT_TOKEN", ""),
+                # Discord出力設定
+                "ENABLE_DISCORD_STREAMING": os.environ.get("ENABLE_DISCORD_STREAMING", "true"),
+                "DISCORD_STREAM_MIN_LINES": os.environ.get("DISCORD_STREAM_MIN_LINES", "1"),
+                "DISCORD_STREAM_MAX_BUFFER": os.environ.get("DISCORD_STREAM_MAX_BUFFER", "1500")
             },
             log_retention=logs.RetentionDays.ONE_WEEK,
-            description="Strands Agentサーバーレス関数"
+            description="Strands Agents Discord Worker"
         )
 
         # 指定された場合、予約同時実行数を設定
         if reserved_concurrent:
             lambda_function.add_reserved_concurrent_executions(reserved_concurrent)
 
-        # Lambda Function URLを作成
-        # CORSの設定を含む
-        function_url = lambda_function.add_function_url(
-            auth_type=lambda_.FunctionUrlAuthType.NONE,  # 認証なし（必要に応じてAWS_IAMに変更）
-            cors={
-                "allowed_origins": ["*"],  # すべてのオリジンを許可
-                "allowed_methods": [lambda_.HttpMethod.POST],  # POSTメソッドのみ
-                "allowed_headers": ["Content-Type", "Authorization"],
-                "max_age": Duration.hours(1)
-            }
-        )
-
-        # Function URLに対する権限を付与（パブリックアクセス）
+        # SNSからの呼び出し権限を付与
         lambda_function.add_permission(
-            "AllowPublicAccess",
-            principal=iam.ServicePrincipal("*"),
-            action="lambda:InvokeFunctionUrl",
-            function_url_auth_type=lambda_.FunctionUrlAuthType.NONE
+            "AllowSNSInvoke",
+            principal=iam.ServicePrincipal("sns.amazonaws.com"),
+            action="lambda:InvokeFunction"
         )
 
         # 出力
-        CfnOutput(
-            self, "FunctionUrl",
-            value=function_url.url,
-            description="Lambda Function URL"
-        )
-
         CfnOutput(
             self, "LambdaFunctionName",
             value=lambda_function.function_name,
@@ -164,5 +188,5 @@ class StrandsAgentStack(Stack):
         CfnOutput(
             self, "LambdaFunctionArn",
             value=lambda_function.function_arn,
-            description="Lambda関数ARN"
+            description="Lambda関数ARN（SNS Topicのサブスクリプション作成時に使用）"
         )

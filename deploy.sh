@@ -1,26 +1,77 @@
 #!/bin/bash
 set -e
 
-echo "Strands Agent AWS Lambda CDK Deploy"
+echo "Strands Agent Discord Worker AWS Lambda CDK Deploy"
 echo "====================================="
 echo ""
 
 # バージョン
 VERSION="2.0.0"
 
-# 必須引数
-AWS_PROFILE=""
-AWS_REGION=""
-LAMBDA_MEMORY=""
-LAMBDA_TIMEOUT=""
-FUNCTION_NAME=""
-MODEL_ID="us.amazon.nova-pro-v1:0"
+# 仮想環境の自動セットアップ
+if [ ! -d ".venv" ]; then
+    echo "→ 仮想環境が見つかりません。uvで作成します..."
+    if command -v uv &> /dev/null; then
+        uv venv
+    else
+        echo "✗ uvが見つかりません。以下のコマンドでインストールしてください:"
+        echo "  curl -LsSf https://astral.sh/uv/install.sh | sh"
+        exit 1
+    fi
+fi
+
+# 依存関係の同期
+echo "→ 依存関係を同期中..."
+if command -v uv &> /dev/null; then
+    uv sync
+else
+    echo "✗ uvが見つかりません。以下のコマンドでインストールしてください:"
+    echo "  curl -LsSf https://astral.sh/uv/install.sh | sh"
+    exit 1
+fi
+
+# uvが存在することを再確認
+if ! command -v uv &> /dev/null; then
+    echo "✗ uvが見つかりません。以下のコマンドでインストールしてください:"
+    echo "  curl -LsSf https://astral.sh/uv/install.sh | sh"
+    exit 1
+fi
+
+# .envファイルの読み込み
+if [ -f .env ]; then
+    echo "→ .envファイルを読み込んでいます..."
+    set -a
+    source .env
+    set +a
+else
+    echo "⚠ .envファイルが見つかりません。"
+    echo "  .env.exampleをコピーして.envファイルを作成してください:"
+    echo "  cp .env.example .env"
+    exit 1
+fi
+
+# 環境変数からデフォルト値を設定
+AWS_PROFILE="${AWS_PROFILE}"
+AWS_REGION="${AWS_REGION}"
+LAMBDA_MEMORY="${LAMBDA_MEMORY:-1024}"
+LAMBDA_TIMEOUT="${LAMBDA_TIMEOUT:-10}"
+FUNCTION_NAME="${FUNCTION_NAME:-strands-agent-discord-worker}"
+MODEL_ID="${MODEL_ID:-us.amazon.nova-pro-v1:0}"
 
 # オプション
-STACK_TYPE=${CDK_STACK_TYPE:-"standard"}  # standard, migration, secure
-ENVIRONMENT=${ENVIRONMENT:-"dev"}
-DRY_RUN=false
-FORCE_DEPLOY=false
+STACK_TYPE="${STACK_TYPE:-standard}"
+ENVIRONMENT="${ENVIRONMENT:-dev}"
+DRY_RUN="${DRY_RUN:-false}"
+FORCE_DEPLOY="${FORCE_DEPLOY:-false}"
+
+# Discord設定
+DISCORD_APPLICATION_ID="${DISCORD_APPLICATION_ID}"
+DISCORD_BOT_TOKEN="${DISCORD_BOT_TOKEN}"
+
+# Discord出力設定
+ENABLE_DISCORD_STREAMING="${ENABLE_DISCORD_STREAMING:-true}"
+DISCORD_STREAM_MIN_LINES="${DISCORD_STREAM_MIN_LINES:-2}"
+DISCORD_STREAM_MAX_BUFFER="${DISCORD_STREAM_MAX_BUFFER:-3000}"
 
 # カラーコード
 RED='\033[0;31m'
@@ -46,94 +97,24 @@ print_warning() {
     echo -e "${YELLOW}⚠ $1${NC}"
 }
 
-# コマンドライン引数の解析
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --profile|-p)
-            AWS_PROFILE="$2"
-            shift 2
-            ;;
-        --region|-r)
-            AWS_REGION="$2"
-            shift 2
-            ;;
-        --memory|-m)
-            LAMBDA_MEMORY="$2"
-            shift 2
-            ;;
-        --timeout|-t)
-            LAMBDA_TIMEOUT="$2"
-            shift 2
-            ;;
-        --name|-n)
-            FUNCTION_NAME="$2"
-            shift 2
-            ;;
-        --model|-M)
-            MODEL_ID="$2"
-            shift 2
-            ;;
-        --stack-type|-s)
-            STACK_TYPE="$2"
-            shift 2
-            ;;
-        --environment|-e)
-            ENVIRONMENT="$2"
-            shift 2
-            ;;
-        --dry-run)
-            DRY_RUN=true
-            shift
-            ;;
-        --force)
-            FORCE_DEPLOY=true
-            shift
-            ;;
-        --version|-v)
-            echo "Strands Agent Lambda Deploy Script v${VERSION}"
-            exit 0
-            ;;
-        --help|-h)
-            echo "使用方法: $0 [オプション]"
-            echo ""
-            echo "必須引数:"
-            echo "  -p, --profile <profile>  使用するAWSプロファイル"
-            echo "  -r, --region <region>    デプロイ先のAWSリージョン"
-            echo ""
-            echo "オプション:"
-            echo "  -m, --memory <size>      Lambdaメモリサイズ（MB、デフォルト: 1024）"
-            echo "  -t, --timeout <minutes>  Lambdaタイムアウト（分、デフォルト: 10）"
-            echo "  -n, --name <name>        Lambda関数名（デフォルト: strands-agent-sample1）"
-            echo "  -M, --model <model_id>   BedrockモデルID（デフォルト: us.amazon.nova-pro-v1:0）"
-            echo "  -s, --stack-type <type>  スタックタイプ (standard/migration/secure, デフォルト: standard)"
-            echo "  -e, --environment <env>  環境 (デフォルト: dev)"
-            echo "  --dry-run                実際のデプロイを行わずにシンセサイズのみ実行"
-            echo "  --force                  確認プロンプトをスキップ"
-            echo "  -v, --version            バージョン情報を表示"
-            echo "  -h, --help               このヘルプメッセージを表示"
-            echo ""
-            echo "例:"
-            echo "  $0 -p myprofile -r us-east-1"
-            echo "  $0 -p myprofile -r us-east-1 -m 2048 -t 15"
-            echo "  $0 -p myprofile -r us-east-1 -s migration -e staging"
-            exit 0
-            ;;
-        *)
-            print_error "不明なオプション: $1"
-            echo "使用方法を確認するには --help または -h を使用してください"
-            exit 1
-            ;;
-    esac
-done
-
-# プロファイルとリージョンの必須チェック
+# 必須項目のチェック
 if [ -z "$AWS_PROFILE" ]; then
-    print_error "AWSプロファイルが指定されていません。--profile <profile> または -p <profile> を使用してください"
+    print_error "AWS_PROFILEが設定されていません。.envファイルを確認してください"
     exit 1
 fi
 
 if [ -z "$AWS_REGION" ]; then
-    print_error "AWSリージョンが指定されていません。--region <region> または -r <region> を使用してください"
+    print_error "AWS_REGIONが設定されていません。.envファイルを確認してください"
+    exit 1
+fi
+
+if [ -z "$DISCORD_APPLICATION_ID" ]; then
+    print_error "DISCORD_APPLICATION_IDが設定されていません。.envファイルを確認してください"
+    exit 1
+fi
+
+if [ -z "$DISCORD_BOT_TOKEN" ]; then
+    print_error "DISCORD_BOT_TOKENが設定されていません。.envファイルを確認してください"
     exit 1
 fi
 
@@ -144,18 +125,17 @@ echo "プロファイル: $AWS_PROFILE"
 echo "リージョン: $AWS_REGION"
 echo "スタックタイプ: $STACK_TYPE"
 echo "環境: $ENVIRONMENT"
-if [ ! -z "$LAMBDA_MEMORY" ]; then
-    echo "メモリ: ${LAMBDA_MEMORY}MB"
-fi
-if [ ! -z "$LAMBDA_TIMEOUT" ]; then
-    echo "タイムアウト: ${LAMBDA_TIMEOUT}分"
-fi
-if [ ! -z "$FUNCTION_NAME" ]; then
-    echo "関数名: $FUNCTION_NAME"
-fi
-if [ ! -z "$MODEL_ID" ]; then
-    echo "モデルID: $MODEL_ID"
-fi
+echo "メモリ: ${LAMBDA_MEMORY}MB"
+echo "タイムアウト: ${LAMBDA_TIMEOUT}分"
+echo "関数名: $FUNCTION_NAME"
+echo "モデルID: $MODEL_ID"
+echo "Discord App ID: ${DISCORD_APPLICATION_ID:0:10}..."
+echo "Discord Bot Token: ****"
+echo ""
+echo "Discord出力設定:"
+echo "  ストリーミング: $ENABLE_DISCORD_STREAMING"
+echo "  最小送信行数: ${DISCORD_STREAM_MIN_LINES}行"
+echo "  最大バッファ: ${DISCORD_STREAM_MAX_BUFFER}文字"
 echo "-------------------------------------"
 
 # AWS認証情報の検証
@@ -215,15 +195,35 @@ fi
 
 set -e
 
-# 依存関係のインストール
+# CDK依存関係の確認（uvを使用）
 echo ""
-print_info "CDK依存関係をインストール中..."
-uv pip install aws-cdk-lib constructs --quiet
+print_info "CDK依存関係を確認中..."
+if ! uv pip show aws-cdk-lib > /dev/null 2>&1; then
+    print_info "aws-cdk-libをインストール中..."
+    uv pip install aws-cdk-lib constructs
+fi
+
+# CDK CLIの確認
+if ! command -v cdk &> /dev/null; then
+    print_warning "CDK CLIが見つかりません"
+    echo "  CDK CLIをインストールするには以下のコマンドを実行してください:"
+    echo "    npm install -g aws-cdk"
+    echo ""
+    echo "  または、npxを使用してCDKを実行することもできます。"
+    echo "  この場合、スクリプトはnpxを使用して続行します。"
+    
+    # npxを使用してCDKを実行
+    CDK_CMD="npx aws-cdk"
+else
+    CDK_CMD="cdk"
+fi
+
+print_info "CDKコマンド: $CDK_CMD"
 
 # Lambda Layerの構築
 echo ""
 print_info "Lambda Layerを構築中..."
-if python build_layer.py; then
+if uv run python build_layer.py; then
     print_success "Lambda Layerの構築が完了しました"
 else
     print_error "Lambda Layerの構築に失敗しました"
@@ -233,7 +233,7 @@ fi
 # CDK Bootstrapの確認
 echo ""
 print_info "CDKブートストラップを確認中..."
-if cdk bootstrap aws://$AWS_ACCOUNT_ID/$AWS_REGION --profile $AWS_PROFILE 2>/dev/null; then
+if $CDK_CMD bootstrap aws://$AWS_ACCOUNT_ID/$AWS_REGION --profile $AWS_PROFILE 2>/dev/null; then
     print_success "CDKブートストラップ完了"
 else
     print_info "CDKは既にブートストラップ済みです"
@@ -256,29 +256,28 @@ fi
 
 # CDKコンテキストパラメータの構築
 CDK_CONTEXT=""
-if [ ! -z "$LAMBDA_MEMORY" ]; then
-    CDK_CONTEXT="$CDK_CONTEXT -c lambda_memory=$LAMBDA_MEMORY"
-fi
-if [ ! -z "$LAMBDA_TIMEOUT" ]; then
-    CDK_CONTEXT="$CDK_CONTEXT -c lambda_timeout=$LAMBDA_TIMEOUT"
-fi
-if [ ! -z "$FUNCTION_NAME" ]; then
-    CDK_CONTEXT="$CDK_CONTEXT -c lambda_function_name=$FUNCTION_NAME"
-fi
-if [ ! -z "$MODEL_ID" ]; then
-    CDK_CONTEXT="$CDK_CONTEXT -c default_model_id=$MODEL_ID"
-fi
+CDK_CONTEXT="$CDK_CONTEXT -c lambda_memory=$LAMBDA_MEMORY"
+CDK_CONTEXT="$CDK_CONTEXT -c lambda_timeout=$LAMBDA_TIMEOUT"
+CDK_CONTEXT="$CDK_CONTEXT -c lambda_function_name=$FUNCTION_NAME"
+CDK_CONTEXT="$CDK_CONTEXT -c default_model_id=$MODEL_ID"
+
+# 環境変数をエクスポート（CDKスタックで使用）
+export DISCORD_APPLICATION_ID
+export DISCORD_BOT_TOKEN
+export ENABLE_DISCORD_STREAMING
+export DISCORD_STREAM_MIN_LINES
+export DISCORD_STREAM_MAX_BUFFER
 
 # スタック名の設定
-STACK_NAME="StrandsAgentStack"
+STACK_NAME="StrandsAgentDiscordWorkerStack"
 if [ "$ENVIRONMENT" != "dev" ]; then
-    STACK_NAME="StrandsAgentStack-${ENVIRONMENT}"
+    STACK_NAME="StrandsAgentDiscordWorkerStack-${ENVIRONMENT}"
 fi
 
 if [ -f "$APP_PY" ]; then
-    cdk synth $CDK_CONTEXT --app "python $APP_PY" --profile $AWS_PROFILE
+    $CDK_CMD synth $CDK_CONTEXT --app "uv run python $APP_PY" --profile $AWS_PROFILE
 else
-    cdk synth $CDK_CONTEXT --profile $AWS_PROFILE
+    $CDK_CMD synth $CDK_CONTEXT --profile $AWS_PROFILE
 fi
 
 if [ $? -eq 0 ]; then
@@ -307,21 +306,24 @@ echo ""
 print_info "スタックをデプロイ中..."
 
 if [ -f "$APP_PY" ]; then
-    cdk deploy $CDK_CONTEXT --app "python $APP_PY" --profile $AWS_PROFILE --require-approval never
+    $CDK_CMD deploy $CDK_CONTEXT --app "uv run python $APP_PY" --profile $AWS_PROFILE --require-approval never
 else
-    cdk deploy $CDK_CONTEXT --profile $AWS_PROFILE --require-approval never
+    $CDK_CMD deploy $CDK_CONTEXT --profile $AWS_PROFILE --require-approval never
 fi
 
 if [ $? -eq 0 ]; then
     echo ""
     print_success "デプロイが正常に完了しました！"
     echo ""
-    echo "Lambda Function URLはCloudFormationの出力を確認するか、"
-    echo "AWSコンソールで確認してください。URLを使用して以下のようにテストできます:"
+    echo "Lambda関数ARNはCloudFormationの出力を確認してください。"
+    echo "このARNを使用してSNS Topicにサブスクライブしてください:"
+    echo ""
     echo "例:"
-    echo '  curl -X POST <FUNCTION_URL> \'
-    echo '    -H "Content-Type: application/json" \'
-    echo '    -d '\''{"prompt": "現在の日時を教えてください"}'\'''
+    echo '  aws sns subscribe \'
+    echo '    --topic-arn arn:aws:sns:<REGION>:<ACCOUNT_ID>:<TOPIC_NAME> \'
+    echo '    --protocol lambda \'
+    echo '    --notification-endpoint <LAMBDA_FUNCTION_ARN> \'
+    echo '    --profile <PROFILE> --region <REGION>'
 else
     print_error "デプロイに失敗しました"
     exit 1

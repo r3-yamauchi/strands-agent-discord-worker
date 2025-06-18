@@ -6,12 +6,193 @@ import sys
 import logging
 import functools
 import time
+import threading
+import queue
+import requests
+import json
 from typing import Any, Callable, Optional, Tuple
 from contextlib import contextmanager
 from datetime import datetime
 
 
 logger = logging.getLogger(__name__)
+
+
+class DiscordStreamWriter(io.StringIO):
+    """Discordにリアルタイムで出力を送信するカスタムストリーム"""
+    
+    def __init__(self, token: str, application_id: str, bot_token: str, 
+                 min_lines: int = 1, max_buffer_size: int = 1500):
+        super().__init__()
+        self.token = token
+        self.application_id = application_id
+        self.bot_token = bot_token
+        self.min_lines = min_lines  # 最小送信行数
+        self.max_buffer_size = max_buffer_size  # 最大バッファサイズ（文字数）
+        self.line_buffer = []  # 行単位のバッファ
+        self.current_line = []  # 現在の行
+        self.total_content = []
+        self.lock = threading.Lock()
+        self.send_queue = queue.Queue()
+        self.stop_event = threading.Event()
+        
+        logger.info(f"DiscordStreamWriter初期化 - min_lines: {self.min_lines}, max_buffer_size: {self.max_buffer_size}")
+        
+        # 送信スレッドを開始
+        self.sender_thread = threading.Thread(target=self._sender_worker, daemon=True)
+        self.sender_thread.start()
+    
+    def write(self, s: str) -> int:
+        """文字列を書き込み、改行で区切って送信"""
+        if not s:
+            return 0
+            
+        # 元のStringIOに書き込み
+        result = super().write(s)
+        
+        with self.lock:
+            self.total_content.append(s)
+            
+            # 文字列を処理
+            for char in s:
+                if char == '\n':
+                    # 改行が来たら現在の行を完成させる
+                    if self.current_line:
+                        completed_line = ''.join(self.current_line)
+                        self.line_buffer.append(completed_line)
+                        self.current_line = []
+                    
+                    # バッファチェック
+                    self._check_and_send_buffer()
+                else:
+                    # 改行以外は現在の行に追加
+                    self.current_line.append(char)
+            
+            # バッファサイズが大きくなりすぎた場合は強制送信
+            current_buffer_size = sum(len(line) for line in self.line_buffer)
+            if self.current_line:
+                current_buffer_size += len(self.current_line)
+            
+            if current_buffer_size >= self.max_buffer_size:
+                self._force_send_buffer()
+        
+        return result
+    
+    def _check_and_send_buffer(self):
+        """バッファの行数をチェックして送信"""
+        if len(self.line_buffer) >= self.min_lines:
+            logger.debug(f"バッファ送信条件を満たしました - 行数: {len(self.line_buffer)} >= {self.min_lines}")
+            # 改行で結合して送信
+            content = '\n'.join(self.line_buffer)
+            if content.strip():  # 空白のみの場合は送信しない
+                self.send_queue.put(content)
+                logger.debug(f"送信キューに追加: {len(content)}文字")
+            self.line_buffer = []
+    
+    def _force_send_buffer(self):
+        """バッファを強制的に送信"""
+        # 現在の行も含めて送信
+        all_lines = self.line_buffer.copy()
+        if self.current_line:
+            all_lines.append(''.join(self.current_line))
+            self.current_line = []
+        
+        if all_lines:
+            content = '\n'.join(all_lines)
+            if content.strip():
+                self.send_queue.put(content)
+        
+        self.line_buffer = []
+    
+    def _sender_worker(self):
+        """バックグラウンドでDiscordに送信するワーカー"""
+        while not self.stop_event.is_set():
+            try:
+                # キューから内容を取得（タイムアウト付き）
+                content = self.send_queue.get(timeout=0.1)
+                self._send_to_discord(content)
+                self.send_queue.task_done()
+            except queue.Empty:
+                continue
+            except Exception as e:
+                logger.error(f"Discord送信エラー: {str(e)}")
+    
+    def _send_to_discord(self, content: str):
+        """Discordに内容を送信"""
+        try:
+            url = f"https://discord.com/api/v10/webhooks/{self.application_id}/{self.token}"
+            headers = {
+                "Authorization": f"Bot {self.bot_token}",
+                "Content-Type": "application/json",
+            }
+            
+            # Discord APIの文字数制限（2000文字）を考慮
+            if len(content) > 1900:
+                content = content[:1900] + "..."
+            
+            data = json.dumps({"content": f"```\n{content}\n```"})
+            
+            response = requests.post(url=url, data=data, headers=headers, timeout=5)
+            
+            if response.status_code != 204:
+                logger.warning(f"Discord API応答: {response.status_code} - {response.text}")
+                
+        except Exception as e:
+            logger.error(f"Discord送信失敗: {str(e)}")
+    
+    def flush_remaining(self):
+        """残りのバッファを送信"""
+        with self.lock:
+            # 残っている行をすべて送信
+            all_lines = self.line_buffer.copy()
+            if self.current_line:
+                all_lines.append(''.join(self.current_line))
+                self.current_line = []
+            
+            if all_lines:
+                content = '\n'.join(all_lines)
+                if content.strip():
+                    self.send_queue.put(content)
+            
+            self.line_buffer = []
+        
+        # キューが空になるまで待つ
+        self.send_queue.join()
+    
+    def close(self):
+        """ストリームを閉じる"""
+        self.flush_remaining()
+        self.stop_event.set()
+        self.sender_thread.join(timeout=2)
+        super().close()
+    
+    def get_full_content(self):
+        """キャプチャされた全内容を取得"""
+        with self.lock:
+            return ''.join(self.total_content)
+
+
+@contextmanager
+def capture_stdout_with_discord(token: str, application_id: str, bot_token: str,
+                               min_lines: int = 1, max_buffer_size: int = 1500):
+    """標準出力をキャプチャし、同時にDiscordに送信するコンテキストマネージャー"""
+    old_stdout = sys.stdout
+    discord_writer = DiscordStreamWriter(
+        token, application_id, bot_token,
+        min_lines=min_lines,
+        max_buffer_size=max_buffer_size
+    )
+    
+    try:
+        sys.stdout = discord_writer
+        yield discord_writer
+    finally:
+        # 確実に標準出力を元に戻す
+        sys.stdout = old_stdout
+        try:
+            discord_writer.close()
+        except Exception as e:
+            logger.error(f"DiscordStreamWriter close error: {str(e)}")
 
 
 @contextmanager
@@ -139,6 +320,16 @@ def get_model_info(agent: Any, model_config: dict, default_model: str) -> str:
         if hasattr(agent, 'model'):
             model = agent.model
             
+            # BedrockModelの場合、model_idを直接取得
+            if hasattr(model, 'model_id'):
+                return model.model_id
+            
+            # BedrockModelの場合、configからmodel_idを取得
+            if hasattr(model, 'config') and hasattr(model.config, 'get'):
+                config = model.config
+                if 'model_id' in config:
+                    return config['model_id']
+            
             # よくある属性名をチェック
             for attr in ['model_id', '_model_id', 'id', '_id']:
                 if hasattr(model, attr):
@@ -151,7 +342,9 @@ def get_model_info(agent: Any, model_config: dict, default_model: str) -> str:
                 return model
         
         # model_configから取得
-        if 'model' in model_config:
+        if 'model_id' in model_config:
+            return model_config['model_id']
+        elif 'model' in model_config:
             return model_config['model']
         
         # デフォルトを返す
@@ -178,7 +371,6 @@ def measure_execution_time(func: Callable) -> Callable:
             raise
     
     return wrapper
-
 
 def format_response(
     success: bool,

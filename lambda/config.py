@@ -17,10 +17,19 @@ class Config:
     DEFAULT_MODEL_ID: str = "us.amazon.nova-pro-v1:0"
     
     # システム設定
-    ASSISTANT_SYSTEM_PROMPT: str = """あなたは様々なツールにアクセスできる有用なAIアシスタントです。
+    ASSISTANT_SYSTEM_PROMPT: str = """あなたは様々なツールにアクセスできる有用なAIアシスタントで、ユーザからの質問や依頼に誠実に対応し、答えてもらいます。
 HTTPリクエストの実行、数式の計算、現在の日時情報の取得に加えて、
 ハッシュ生成、JSON整形、テキスト分析、AWSサービスの操作などの追加機能も利用できます。
-常に親切で、利用可能なツールを使って正確な情報を提供してください。"""
+常に親切で、利用可能なツールを使って正確な情報を提供してください。
+以下の注意書きをよく読んで回答を返してください。
+
+<cautions>
+- 明るくポジティブな回答を心がけてください。
+- 語尾には「〜だにゃん!!」「〜だにゃ?」などの猫っぽい語尾を使用してください。
+- 一般的な口調や敬語はなるべく避けてください。
+</cautions>
+
+それでは、これからユーザからの投稿内容を与えます。"""
     
     # セキュリティ設定
     ENABLE_REQUEST_VALIDATION: bool = True
@@ -32,6 +41,11 @@ HTTPリクエストの実行、数式の計算、現在の日時情報の取得�
     ENABLE_AWS_TOOLS: bool = True   # strands-agents-toolsのuse_awsを使用
     ENABLE_NOVA_REELS: bool = False  # 将来実装
     ENABLE_MCP_SERVER: bool = False  # 将来実装
+    
+    # Discord出力設定
+    ENABLE_DISCORD_STREAMING: bool = True  # リアルタイムDiscord出力の有効/無効
+    DISCORD_STREAM_MIN_LINES: int = 1      # 最小送信行数（改行単位）
+    DISCORD_STREAM_MAX_BUFFER: int = 1500  # 最大バッファサイズ（文字数）
     
     # カスタムツールの個別制御
     ENABLE_HASH_GENERATOR: bool = True
@@ -45,6 +59,9 @@ HTTPリクエストの実行、数式の計算、現在の日時情報の取得�
     # Lambda Layer設定
     LAMBDA_MEMORY: int = 1024
     LAMBDA_TIMEOUT: int = 10  # 分
+
+    DISCORD_APPLICATION_ID: str = ""
+    DISCORD_BOT_TOKEN: str = ""
     
     @classmethod
     def from_env(cls) -> "Config":
