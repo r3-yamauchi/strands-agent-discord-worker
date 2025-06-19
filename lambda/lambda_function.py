@@ -305,7 +305,7 @@ def _handle_request_error(token: str, error: Exception) -> Dict[str, Any]:
         if token:
             return _send_discord_response(
                 token=token,
-                content=json.dumps('Internal Server Error', ensure_ascii=False)
+                content=json.dumps(error_message, ensure_ascii=False)
             )
         else:
             return {
@@ -357,7 +357,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "temperature": 0.7,
             "max_tokens": 4096
         }
-        
+
+        # プロンプトからモデルIDを決定
+        prompt_lower = prompt.lower()
+        for keyword, model_id in config.MODEL_KEYWORDS.items():
+            if keyword in prompt_lower:
+                model_config['model_id'] = model_id
+                logger.info(f"キーワード '{keyword}' を検出、モデル '{model_id}' を使用")
+                break
+
         # BedrockModelインスタンスを作成
         model = _create_model(model_config)
         
@@ -382,7 +390,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # ストリーミングが有効な場合は、最終応答を明示
             return _send_discord_response(
                 token=token,
-                content=f"**処理完了**\n最終応答: {complete_response}"
+                content=f"**処理完了 [{used_model}]**\n最終応答: {complete_response}"
             )
         else:
             # ストリーミングが無効な場合は、応答のみを送信

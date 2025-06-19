@@ -63,6 +63,12 @@ HTTPリクエストの実行、数式の計算、現在の日時情報の取得�
     DISCORD_APPLICATION_ID: str = ""
     DISCORD_BOT_TOKEN: str = ""
     
+    # モデル選択設定
+    MODEL_KEYWORDS: Dict[str, str] = field(default_factory=lambda: {
+        'sonnet': 'us.anthropic.claude-3-7-sonnet-20250219-v1:0',
+        'premier': 'us.amazon.nova-premier-v1:0'
+    })
+    
     @classmethod
     def from_env(cls) -> "Config":
         """環境変数から設定を読み込み"""

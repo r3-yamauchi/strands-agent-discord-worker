@@ -41,25 +41,7 @@ class StrandsAgentDiscordWorkerStack(Stack):
                                 "bedrock:InvokeModelWithResponseStream",
                                 "bedrock:Converse",
                                 "bedrock:ConverseStream",
-                                "bedrock:ListFoundationModels",
-                                "bedrock:ListProvisionedModelThroughputs",
-                                "bedrock:ListCustomModels",
-                                "bedrock:ListModelCustomizationJobs",
-                                "bedrock:ListEvaluationJobs",
-                                "bedrock:ListGuardrails",
-                                "bedrock:ListAgents",
-                                "bedrock:ListAgentActionGroups",
-                                "bedrock:ListAgentAliases",
-                                "bedrock:ListAgentKnowledgeBases",
-                                "bedrock:ListAgentVersions",
-                                "bedrock:ListDataSources",
-                                "bedrock:ListIngestionJobs",
-                                "bedrock:ListKnowledgeBases",
-                                "bedrock:ListPrompts",
-                                "bedrock:ListFlows",
-                                "bedrock:ListFlowAliases",
-                                "bedrock:ListFlowVersions",
-                                "bedrock:ListTagsForResource"
+                                "bedrock:List*"
                             ],
                             resources=["*"]  # 特定のモデルARNに制限することも可能
                         ),
@@ -70,11 +52,8 @@ class StrandsAgentDiscordWorkerStack(Stack):
                                 "sns:Subscribe",
                                 "sns:Unsubscribe",
                                 "sns:Receive",
-                                "sns:ListTopics",
-                                "sns:ListSubscriptions",
-                                "sns:ListSubscriptionsByTopic",
-                                "sns:GetTopicAttributes",
-                                "sns:GetSubscriptionAttributes"
+                                "sns:List*",
+                                "sns:Get*"
                             ],
                             resources=["*"]  # すべてのSNS Topicに対してサブスクライブ可能
                         ),
@@ -102,26 +81,15 @@ class StrandsAgentDiscordWorkerStack(Stack):
                                 "ssm:GetParametersByPath",
                                 # CloudWatch権限
                                 "cloudwatch:PutMetricData",
-                                "cloudwatch:GetMetricStatistics",
+                                "cloudwatch:Get*",
+                                "cloudwatch:GenerateQuery",
+                                "cloudwatch:GenerateQueryResultsSummary",
+                                "logs:*",
                                 # Lambda権限
-                                "lambda:ListFunctions",
-                                "lambda:GetFunction",
-                                "lambda:GetFunctionConfiguration",
-                                "lambda:ListVersionsByFunction",
-                                "lambda:ListAliases",
-                                "lambda:GetPolicy",
-                                "lambda:ListTags",
+                                "lambda:List*",
+                                "lambda:Get*",
                                 # EC2権限
-                                "ec2:DescribeInstances",
-                                "ec2:DescribeInstanceStatus",
-                                "ec2:DescribeSecurityGroups",
-                                "ec2:DescribeSubnets",
-                                "ec2:DescribeVpcs",
-                                "ec2:DescribeImages",
-                                "ec2:DescribeKeyPairs",
-                                "ec2:DescribeSnapshots",
-                                "ec2:DescribeVolumes",
-                                "ec2:DescribeTags"
+                                "ec2:Describe*"
                             ],
                             resources=["*"]  # 本番環境では必要なリソースのみに制限することを推奨
                         )
