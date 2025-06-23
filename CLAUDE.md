@@ -135,7 +135,7 @@ pyproject.toml           # Pythonプロジェクト設定（uv用、依存関係
 - `DISCORD_APPLICATION_ID`: DiscordアプリケーションID（必須）
 - `DISCORD_BOT_TOKEN`: Discord Botトークン（必須）
 - `LAMBDA_MEMORY`: Lambda関数のメモリサイズ（MB、デフォルト: 1024）
-- `LAMBDA_TIMEOUT`: Lambda関数のタイムアウト（分、デフォルト: 10）
+- `LAMBDA_TIMEOUT`: Lambda関数のタイムアウト（分、デフォルト: 2）
 
 #### Discord出力設定
 - `ENABLE_DISCORD_STREAMING`: リアルタイムDiscord出力の有効/無効（デフォルト: true）

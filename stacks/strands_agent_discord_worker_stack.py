@@ -17,7 +17,7 @@ class StrandsAgentDiscordWorkerStack(Stack):
 
         # コンテキストから設定を取得
         memory_size = int(self.node.try_get_context("lambda_memory") or 1024)
-        timeout_minutes = int(self.node.try_get_context("lambda_timeout") or 10)
+        timeout_minutes = int(self.node.try_get_context("lambda_timeout") or 2)
         reserved_concurrent = self.node.try_get_context("reserved_concurrent")
         if reserved_concurrent:
             reserved_concurrent = int(reserved_concurrent)
@@ -51,7 +51,6 @@ class StrandsAgentDiscordWorkerStack(Stack):
                             actions=[
                                 "sns:Subscribe",
                                 "sns:Unsubscribe",
-                                "sns:Receive",
                                 "sns:List*",
                                 "sns:Get*"
                             ],
@@ -61,34 +60,38 @@ class StrandsAgentDiscordWorkerStack(Stack):
                         iam.PolicyStatement(
                             effect=iam.Effect.ALLOW,
                             actions=[
-                                # S3権限
+                                # S3
                                 "s3:ListBucket",
                                 "s3:GetObject",
                                 "s3:PutObject",
                                 "s3:DeleteObject",
                                 "s3:ListAllMyBuckets",
-                                # DynamoDB権限
+                                # DynamoDB
                                 "dynamodb:ListTables",
                                 "dynamodb:DescribeTable",
                                 "dynamodb:GetItem",
                                 "dynamodb:PutItem",
                                 "dynamodb:Query",
                                 "dynamodb:Scan",
-                                # Systems Manager権限
+                                # Systems Manager
                                 "ssm:GetParameter",
                                 "ssm:GetParameters",
                                 "ssm:PutParameter",
                                 "ssm:GetParametersByPath",
-                                # CloudWatch権限
+                                # CloudWatch
                                 "cloudwatch:PutMetricData",
                                 "cloudwatch:Get*",
                                 "cloudwatch:GenerateQuery",
                                 "cloudwatch:GenerateQueryResultsSummary",
                                 "logs:*",
-                                # Lambda権限
-                                "lambda:List*",
+                                # Cost Explorer
+                                "ce:Get*",
+                                "ce:GetCostAndUsage",
+                                "ce:Describe*",
+                                # Lambda
                                 "lambda:Get*",
-                                # EC2権限
+                                "lambda:List*",
+                                # EC2
                                 "ec2:Describe*"
                             ],
                             resources=["*"]  # 本番環境では必要なリソースのみに制限することを推奨
