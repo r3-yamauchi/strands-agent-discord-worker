@@ -167,11 +167,9 @@ cp .env.example .env
 ### SNS Topicの設定
 
 ```bash
-# 1. SNS Topicを作成
-aws sns create-topic \
-  --name discord-worker-topic \
-  --profile <PROFILE> \
-  --region <REGION>
+# 1. SNS Topicの ARN を確認
+SNS Topic は [JAWS-UG DE&I Amazon Bedrock + AWS SAM ハンズオン Amazon BedrockとAWS SAMで作るDiscord AIチャットボット](https://jawsugdei.connpass.com/event/359714/) の
+[とすりさん作のハンズオン手順](https://zenn.dev/tosuri13/books/0de24e94fb551f)の[中で作成したもの](https://zenn.dev/tosuri13/books/0de24e94fb551f/viewer/6f4440)を使用してください。
 
 # 2. Lambda関数をサブスクライブ
 aws sns subscribe \
@@ -373,6 +371,8 @@ export ASSISTANT_SYSTEM_PROMPT="あなたは親切なAIアシスタントです�
 
 ## 📚 参考リンク
 
+- [JAWS-UG DE&I Amazon Bedrock + AWS SAM ハンズオン Amazon BedrockとAWS SAMで作るDiscord AIチャットボット](https://jawsugdei.connpass.com/event/359714/)
+- [とすりさん作のハンズオン手順](https://zenn.dev/tosuri13/books/0de24e94fb551f)
 - [AWS Strands Agents SDK](https://strandsagents.com/latest/)
 - [AWS Bedrock Documentation](https://docs.aws.amazon.com/bedrock/)
 - [Discord Developer Portal](https://discord.com/developers/docs)
